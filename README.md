@@ -1,36 +1,284 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WhatsApp Clone Frontend with Socket.IO
+
+This project is a simple real-time chat application, mimicking some basic functionalities of WhatsApp, built using Next.js for the frontend and a Node.js/Express server with Socket.IO for the backend communication.
+
+## Features
+
+- **Group Chat:** Users can join existing chat groups or create new ones by specifying a group name.
+- **Direct Messaging (DM):** Users can click on a member in the group list to initiate a private chat.
+- **Real-time Messaging:** Messages are sent and received in real-time within the active group or DM using WebSockets (via Socket.IO).
+- **User Identification:** Users must provide a username before joining a chat. Username uniqueness is checked on the server.
+- **User Presence:** Displays a list of users currently present in the _joined group_.
+- **Join/Leave Notifications:** System messages notify users within a group when someone joins or leaves.
+- **Typing Indicators:** Shows when other users in the current group or DM chat are typing.
+- **Emoji Support:** Users can add emojis to their messages using a built-in emoji picker.
+- **Chat History Persistence (Client-side):** Remembers the user's username and recently joined groups using browser `localStorage` for quick rejoining. (DM history is not persisted).
+- **Modern UI:** Styled using Shadcn/ui components and Tailwind CSS.
+- **Component-Based:** Frontend code refactored into smaller, reusable React components.
+
+## Technology Stack
+
+- **Frontend:**
+  - Next.js (v14+ with App Router)
+  - React
+  - TypeScript
+  - Socket.IO Client
+  - Shadcn/ui
+  - Tailwind CSS
+  - emoji-picker-react
+- **Backend:**
+  - Node.js
+  - Express
+  - Socket.IO Server
+  - CORS
+- **Package Manager:** pnpm
+
+## How it Works
+
+1.  **Connection:** The Next.js frontend establishes a single, stable WebSocket connection to the backend Socket.IO server on initial load, managed to handle React Strict Mode.
+2.  **Joining:**
+    - The user enters their desired username (saved to `localStorage`).
+    - The user can either click a button to rejoin a recent group (loaded from `localStorage`) or type a new group name and click "Create & Join Group".
+    - The frontend emits a `join` event to the server with the username and target group name.
+    - The server checks for username conflicts. If the username is taken, a `joinError` is emitted back.
+    - If OK, the server adds the user's socket to the specified group (room), stores user/group/socket associations, maps the username to the socket ID, and broadcasts an updated user list (`updateUserList` event) and a system message (`message` event with `type: 'system'`) to the group notifying others of the join.
+    - The frontend sets the `joinedGroup` state and sets the `activeChat` to the group, transitioning to the chat view. The group is added to the recent groups list in `localStorage`.
+3.  **Direct Messaging (DM):**
+    - Clicking a user in the sidebar (who isn't the current user) sets the `activeChat` state to `{ type: 'dm', id: targetUsername }`.
+    - The UI switches context, displaying the DM chat history (if any) and updating the header.
+4.  **Messaging (Group & DM):**
+    - When a user types a message and clicks send, the frontend checks the `activeChat` state.
+    - If it's a group chat, it emits a `sendMessage` event with the `group` ID and the message.
+    - If it's a DM, it emits a `sendMessage` event with the `recipientUsername` and the message.
+    - **Group Message:** The server receives the `sendMessage` with a `group` ID, looks up the group, and broadcasts the message (`message` event) to all _other_ clients in that group's room.
+    - **Direct Message:** The server receives the `sendMessage` with a `recipientUsername`, looks up the recipient's socket ID using the `usernameToSocketId` map. If found, it emits the message (`message` event, marked as `isPrivate: true`) _directly_ to that specific socket ID. It also emits the same message back to the _sender's_ socket ID so it appears in their chat history.
+    - Clients receive the `message` event. If `isPrivate` is true, the message is added to the corresponding DM state; otherwise, it's added to the group message state. Messages sent by the user are marked with `user: 'You'` for styling.
+5.  **Typing Indicators:**
+    - When the user types in the input, the frontend emits `startTyping` with either the `group` ID or `recipientUsername` based on `activeChat`.
+    - After a timeout (or when a message is sent/chat focus changes), `stopTyping` is emitted with the same context.
+    - **Group:** The server receives `startTyping` / `stopTyping` with a `group` ID, updates the user's typing status, and broadcasts `userTyping` / `userStoppedTyping` to _other_ users in the group room.
+    - **DM:** The server receives `startTyping` / `stopTyping` with a `recipientUsername`, looks up the recipient's socket ID, and emits `userTyping` / `userStoppedTyping` (marked as `isPrivate: true`) _directly_ to that recipient.
+    - The frontend listens for `userTyping` / `userStoppedTyping` and updates the relevant typing state (`typingUsers` for group, `dmTypingUsers` for DMs) to display the indicator in the header for the currently active chat.
+6.  **Leaving Group:**
+    - When a user clicks the "Leave Group" button (which leaves the _primary joined group_), the frontend emits a `leave` event with the username and `joinedGroup` name.
+    - The server removes the user/group association, ensures any typing indicators are cleared, broadcasts a system message (`message` event) notifying others of the departure, and broadcasts an updated user list (`updateUserList` event) to the remaining users in the group.
+    - The server makes the user's socket leave the Socket.IO room.
+    - The leaving user's frontend UI resets to the join screen.
+7.  **Disconnecting:**
+    - If a user disconnects (e.g., closes the browser tab), the server detects the `disconnect` event.
+    - It cleans up the user's state: removes them from the username mapping, clears any active typing indicators, and performs the `leave` logic for all groups the user was associated with (notifying others, updating user lists).
+
+### Architecture Diagram (Mermaid - Simplified Group + DM + Typing)
+
+```mermaid
+sequenceDiagram
+    participant Client A
+    participant Client B
+    participant Server
+
+    Client A->>Server: Connect
+    Server-->>Client A: Connected
+    Client B->>Server: Connect
+    Server-->>Client B: Connected
+
+    Client A->>Server: emit('join', { username: 'Alice', group: 'Room1' })
+    Server->>Server: Map Alice -> socketA, Add Alice to Room1
+    Server-->>Client B: emit('message', system join msg)
+    Server-->>Client A: emit('updateUserList', ['Alice'])
+    Server-->>Client B: emit('updateUserList', ['Alice', 'Bob'])
+
+    Client B->>Server: emit('join', { username: 'Bob', group: 'Room1' })
+    Server->>Server: Map Bob -> socketB, Add Bob to Room1
+    Server-->>Client A: emit('message', system join msg)
+    Server-->>Client A: emit('updateUserList', ['Alice', 'Bob'])
+    Server-->>Client B: emit('updateUserList', ['Alice', 'Bob'])
+
+    Client A->>Client A: Click on Bob (Open DM)
+    Client A->>Server: emit('startTyping', { recipientUsername: 'Bob' })
+    Server->>Server: Find Bob -> socketB
+    Server-->>Client B: emit('userTyping', { username: 'Alice', isPrivate: true })
+    Client B->>Client B: Show typing indicator for Alice
+
+    Client A->>Server: emit('sendMessage', { recipientUsername: 'Bob', message: {...} })
+    Server->>Server: Find Bob -> socketB
+    Server-->>Client B: emit('message', {..., isPrivate: true})
+    Server-->>Client A: emit('message', {..., isPrivate: true, user: 'You'}) // Echo back to sender
+    Client B->>Client B: Add DM from Alice
+    Client A->>Client A: Add own DM to Bob
+
+    Client B->>Client B: Switch back to Group view
+    Client B->>Server: emit('startTyping', { group: 'Room1' })
+    Server->>Server: Mark Bob as typing in Room1
+    Server-->>Client A: emit('userTyping', { username: 'Bob', group: 'Room1' })
+    Client A->>Client A: Show typing indicator for Bob (in Group view)
+
+    Client B->>Server: emit('sendMessage', { group: 'Room1', message: {...} })
+    Server->>Server: Bob stopped typing in Room1
+    Server-->>Client A: emit('userStoppedTyping', { username: 'Bob', group: 'Room1' })
+    Server-->>Client A: emit('message', { user: 'Bob', text: '...' })
+    Client A->>Client A: Add group message from Bob, clear typing indicator
+
+```
+
+## Project Structure
+
+```
+/whatsapp-websocket-frontend-clone
+|-- /public                 # Static assets for Next.js
+|-- /server                 # Backend Node.js server
+|   |-- node_modules/
+|   |-- server.js           # Express + Socket.IO logic
+|   |-- package.json        # Backend dependencies
+|   |-- pnpm-lock.yaml
+|-- /src                    # Frontend Next.js source
+|   |-- /app                # App Router pages
+|   |   |-- globals.css     # Tailwind global styles
+|   |   |-- layout.tsx      # Root layout
+|   |   |-- page.tsx        # Main page component (state management, layout)
+|   |-- /components
+|   |   |-- /chat           # Chat specific components
+|   |   |   |-- ChatHeader.tsx
+|   |   |   |-- ChatSidebar.tsx
+|   |   |   |-- Icons.tsx
+|   |   |   |-- JoinChatForm.tsx
+|   |   |   |-- MessageBubble.tsx
+|   |   |   |-- MessageInput.tsx
+|   |   |   |-- MessageList.tsx
+|   |   |-- /ui             # Shadcn UI components (auto-generated)
+|   |-- /lib                # Utility functions
+|   |   |-- utils.ts        # Shadcn utilities (e.g., cn)
+|-- .env.local              # (Optional) Environment variables
+|-- .eslintrc.json
+|-- .gitignore
+|-- components.json         # Shadcn configuration
+|-- next-env.d.ts
+|-- next.config.mjs         # Next.js configuration
+|-- package.json            # Frontend dependencies
+|-- pnpm-lock.yaml
+|-- postcss.config.mjs
+|-- README.md               # This file
+|-- tailwind.config.ts      # Tailwind configuration
+|-- tsconfig.json
+```
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Node.js (v18 or later recommended)
+- pnpm (or npm/yarn, but commands below use pnpm)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Installation
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    cd whatsapp-websocket-frontend-clone
+    ```
+2.  **Install Frontend Dependencies:**
+    ```bash
+    pnpm install
+    ```
+3.  **Install Backend Dependencies:**
+    ```bash
+    cd server
+    pnpm install
+    cd ..
+    ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Running the Application
 
-## Learn More
+1.  **Start the Backend Server:**
 
-To learn more about Next.js, take a look at the following resources:
+    - Open a terminal window.
+    - Navigate to the server directory:
+      ```bash
+      cd server
+      ```
+    - Run the server:
+      ```bash
+      node server.js
+      ```
+    - Keep this terminal running. You should see output like `Server listening on *:3001`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2.  **Start the Frontend Development Server:**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+    - Open a _separate_ terminal window.
+    - Make sure you are in the project root directory (`whatsapp-websocket-frontend-clone`).
+    - Run the Next.js development server:
+      ```bash
+      pnpm dev
+      ```
 
-## Deploy on Vercel
+3.  **Access the Application:**
+    - Open your web browser and navigate to `http://localhost:3000` (or the port specified in the `pnpm dev` output).
+    - Open a second browser tab/window to the same address to simulate multiple users.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Potential Improvements
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Read receipts.
+- User profile pictures (beyond initials).
+- Persistent message history (database integration for groups and DMs).
+- Notifications for new DMs when not actively viewing the DM chat.
+- More robust state management (e.g., Zustand, Redux Toolkit).
+- Error handling for failed message sends, server issues.
+- Deployment configuration.
+
+## Core Socket.IO Concepts
+
+This project relies heavily on Socket.IO for real-time communication between the React frontend and the Node.js backend. Here's a breakdown of the key concepts used:
+
+### `io` vs. `socket`
+
+- **`io` (Server Instance):** Represents the main Socket.IO server instance on the backend (`server/server.js`). It manages _all_ client connections and can broadcast messages globally or to specific rooms. Created via `new Server(httpServer, ...)`.
+- **`socket` (Client Connection):** Represents a _single, specific_ client connection.
+  - **Server-side:** Inside `io.on('connection', (socket) => { ... })`, `socket` is the object for the newly connected client. Used to listen to events _from_ this client and send messages _back_ to this client.
+  - **Client-side:** In the frontend (`src/app/page.tsx`), the `socket` instance (e.g., `socketInstance`) represents _that client's own connection_ to the server. Used to send events _to_ the server and listen for events _from_ the server.
+
+### Event Handling
+
+- **`io.on('connection', callback)` (Server-side):**
+
+  - The primary listener on the server. Triggered when a _new client connects_.
+  - The `callback` function receives the `socket` object for that specific client, allowing you to set up individual event listeners for them.
+  - _Example:_ `server/server.js` uses this to know when a user connects and then sets up listeners like `socket.on('join', ...)` for that user.
+
+- **`socket.on('eventName', callback)` (Client & Server-side):**
+
+  - Listens for a specific, _custom_ event named `eventName`.
+  - **Client-side:** The client must _actively register_ these listeners to tell its `socket` instance which events from the server it cares about (e.g., `'message'`, `'updateUserList'`).
+  - **Server-side:** Listens for events emitted _from a specific client_.
+  - When the other side `emit`s that event, the corresponding `callback` function on the listening side executes.
+  - **Crucially, any `data` sent by the server via `emit('eventName', data)` becomes the argument passed to the client's `callback` function.**
+  - _Server Example:_ `socket.on('sendMessage', ...)` listens for a client sending a message.
+  - _Client Example:_ `socket.on('message', handleNewMessage)` listens for the server broadcasting a new message. When the server emits `message` with message data, the `handleNewMessage` function on the client runs, receiving the message data as its argument, and updates the React state to display it. Similarly, `socket.on('updateUserList', handleUserListUpdate)` listens for user list updates.
+
+- **`emit('eventName', data)` (Client & Server-side):**
+  - Sends an event named `eventName`, optionally with `data`.
+  - **`socket.emit(...)`:** Sends _only_ to the other side of that specific connection (server to one client, or client to server).
+    - _Example:_ Server sending a `'joinError'` only to the client who failed to join. Client sending a `'startTyping'` event to the server.
+  - **`io.emit(...)` (Server-side):** Sends to _all connected clients_. (Broadcast).
+    - _Example:_ Announcing server maintenance to everyone.
+
+### Rooms (Groups)
+
+Rooms allow the server to manage and target specific groups of clients.
+
+- **`socket.join('roomName')` (Server-side):**
+
+  - Makes the specific client (`socket`) join the logical room named `roomName`.
+  - _Example:_ A user joining a specific chat group like 'General' (`socket.join('General')`).
+
+- **`socket.leave('roomName')` (Server-side):**
+
+  - Makes the specific client (`socket`) leave the room.
+  - _Example:_ A user leaving the 'General' chat group.
+
+- **`socket.to('roomName').emit(...)` (Server-side):**
+
+  - Sends an event to _all clients in `roomName`_ **except** the sender (`socket`).
+  - _Example:_ Sending a chat message to everyone else in the 'General' room after receiving it from one user.
+
+- **`io.to('roomName').emit(...)` (Server-side):**
+  - Sends an event to _all clients in `roomName`_, **including** the sender (if they are in the room).
+  - _Example:_ Sending an updated user list for the 'General' room to everyone in that room, including the user whose joining/leaving triggered the update.
