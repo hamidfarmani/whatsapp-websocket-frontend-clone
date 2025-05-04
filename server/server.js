@@ -1,3 +1,4 @@
+const { instrument } = require('@socket.io/admin-ui');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -13,8 +14,9 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: ['http://localhost:3000', 'https://admin.socket.io'],
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 
@@ -51,3 +53,5 @@ io.on('connection', socket => {
 server.listen(PORT, () => {
   console.log(`Server listening on *:${PORT}`);
 });
+
+instrument(io, { auth: false });
