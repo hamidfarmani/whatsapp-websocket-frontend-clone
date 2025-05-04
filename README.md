@@ -172,7 +172,7 @@ sequenceDiagram
 
 1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/hamidfarmani/whatsapp-websocket-frontend-clone.git
     cd whatsapp-websocket-frontend-clone
     ```
 2.  **Install Frontend Dependencies:**
