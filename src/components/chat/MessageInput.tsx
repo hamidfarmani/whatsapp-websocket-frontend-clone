@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
-import { ChangeEvent, FormEvent } from 'react';
+import { ChangeEvent, Dispatch, FormEvent, SetStateAction } from 'react';
 import { SendIcon, SmileIcon } from './Icons';
 
 interface MessageInputProps {
@@ -18,7 +18,7 @@ interface MessageInputProps {
   handleInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
   handleSendMessage: (e: FormEvent) => void;
   showEmojiPicker: boolean;
-  setShowEmojiPicker: (show: boolean) => void;
+  setShowEmojiPicker: Dispatch<SetStateAction<boolean>>;
   onEmojiClick: (emojiData: EmojiClickData, event: MouseEvent) => void;
   isConnected: boolean;
   activeChat: ActiveChat;

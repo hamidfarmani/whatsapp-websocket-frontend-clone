@@ -9,18 +9,18 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { ChangeEvent, FormEvent } from 'react';
+import { ChangeEvent, Dispatch, FormEvent, SetStateAction } from 'react';
 
 interface JoinChatFormProps {
   username: string;
-  setUsername: (value: string) => void;
+  setUsername: Dispatch<SetStateAction<string>>;
   newGroupInput: string;
-  setNewGroupInput: (value: string) => void;
+  setNewGroupInput: Dispatch<SetStateAction<string>>;
   recentGroups: string[];
   handleJoinGroup: (e: FormEvent, groupToJoin?: string) => void;
   isConnected: boolean;
   joinError: string | null;
-  setJoinError: (error: string | null) => void;
+  setJoinError: Dispatch<SetStateAction<string | null>>;
 }
 
 export function JoinChatForm({
@@ -56,13 +56,13 @@ export function JoinChatForm({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Input /* Username Input */
+        <Input
           type="text"
           placeholder="Enter your name"
           value={username}
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
             setUsername(e.target.value);
-            setJoinError(null); // Clear error on change
+            setJoinError(null);
           }}
           required
           className="w-full"
@@ -100,7 +100,10 @@ export function JoinChatForm({
             </span>
           </div>
         </div>
-        <form onSubmit={handleJoinGroup} className="space-y-3">
+        <form
+          onSubmit={e => handleJoinGroup(e, newGroupInput)}
+          className="space-y-3"
+        >
           <Input
             type="text"
             placeholder="Enter new group name"
@@ -110,7 +113,7 @@ export function JoinChatForm({
             }
             required
             className="w-full"
-            disabled={!username.trim()}
+            disabled={!username.trim() || !isConnected}
             aria-label="New group name"
           />
           <Button

@@ -5,7 +5,9 @@ import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { JoinChatForm } from '@/components/chat/JoinChatForm';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageList } from '@/components/chat/MessageList';
+import { Button } from '@/components/ui/button';
 import { EmojiClickData } from 'emoji-picker-react';
+import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
 
@@ -307,7 +309,7 @@ export default function Home() {
         if (joinedGroup && joinedGroup !== targetGroup) {
           handleLeaveGroup(false);
         }
-        console.log(`Joining group: ${targetGroup}`);
+        console.log(`Joining group: ${targetGroup} as ${username}`);
         socket.emit('join', { username, group: targetGroup });
         setJoinedGroup(targetGroup);
         setActiveChat({ type: 'group', id: targetGroup });
@@ -319,7 +321,14 @@ export default function Home() {
         setJoinError(null);
       }
     },
-    [username, newGroupInput, isConnected, joinedGroup, handleLeaveGroup],
+    [
+      username,
+      newGroupInput,
+      isConnected,
+      joinedGroup,
+      handleLeaveGroup,
+      addGroupToRecents,
+    ],
   );
 
   const handleOpenDm = useCallback(
@@ -347,8 +356,11 @@ export default function Home() {
       e.preventDefault();
       const socket = socketInstance;
       if (!message.trim() || !socket || !isConnected || !activeChat) return;
+
       emitStopTyping();
-      const commonMessage = { user: username, text: message };
+
+      const commonMessage = { user: username, text: message.trim() };
+
       if (activeChat.type === 'group') {
         console.log(`Sending group msg to ${activeChat.id}`);
         socket.emit('sendMessage', {
@@ -405,6 +417,7 @@ export default function Home() {
 
   const onEmojiClick = useCallback((emojiData: EmojiClickData) => {
     setMessage(prevInput => prevInput + emojiData.emoji);
+    setShowEmojiPicker(false);
   }, []);
 
   const currentMessages =
@@ -427,54 +440,60 @@ export default function Home() {
     }
   }, [activeChat, typingUsers, dmTypingUsers, username]);
 
-  return (
-    <div className="flex h-screen w-screen items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
-      {!joinedGroup ? (
-        <JoinChatForm
-          username={username}
-          setUsername={setUsername}
-          newGroupInput={newGroupInput}
-          setNewGroupInput={setNewGroupInput}
-          recentGroups={recentGroups}
-          handleJoinGroup={handleJoinGroup}
-          isConnected={isConnected}
-          joinError={joinError}
-          setJoinError={setJoinError}
-        />
-      ) : (
-        <div className="flex h-[90vh] w-full max-w-4xl rounded-lg border bg-white dark:bg-gray-800 shadow-lg overflow-hidden">
-          <ChatSidebar
-            joinedGroup={joinedGroup}
-            users={users}
+  if (!isConnected || !joinedGroup) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
+        <div className="w-full max-w-md space-y-4">
+          <JoinChatForm
             username={username}
+            setUsername={setUsername}
+            newGroupInput={newGroupInput}
+            setNewGroupInput={setNewGroupInput}
+            recentGroups={recentGroups}
+            handleJoinGroup={handleJoinGroup}
             isConnected={isConnected}
-            activeChat={activeChat}
-            handleOpenDm={handleOpenDm}
-            handleBackToGroup={handleBackToGroup}
-            handleLeaveGroup={handleLeaveGroup}
+            joinError={joinError}
+            setJoinError={setJoinError}
           />
-          <div className="flex flex-1 flex-col">
-            <ChatHeader
-              activeChat={activeChat}
-              typingIndicatorText={typingIndicatorText()}
-            />
-            <MessageList
-              messages={currentMessages}
-              scrollAreaRef={scrollAreaRef}
-            />
-            <MessageInput
-              message={message}
-              handleInputChange={handleInputChange}
-              handleSendMessage={handleSendMessage}
-              showEmojiPicker={showEmojiPicker}
-              setShowEmojiPicker={setShowEmojiPicker}
-              onEmojiClick={onEmojiClick}
-              isConnected={isConnected}
-              activeChat={activeChat}
-            />
+          <div className="text-center">
+            <Link href="/stomp" passHref>
+              <Button variant="link">Switch to STOMP Chat</Button>
+            </Link>
           </div>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-white dark:bg-gray-950">
+      <ChatSidebar
+        joinedGroup={joinedGroup}
+        users={users}
+        username={username}
+        isConnected={isConnected}
+        activeChat={activeChat}
+        handleOpenDm={handleOpenDm}
+        handleBackToGroup={handleBackToGroup}
+        handleLeaveGroup={handleLeaveGroup}
+      />
+      <div className="flex flex-1 flex-col">
+        <ChatHeader
+          activeChat={activeChat}
+          typingIndicatorText={typingIndicatorText()}
+        />
+        <MessageList messages={currentMessages} scrollAreaRef={scrollAreaRef} />
+        <MessageInput
+          message={message}
+          handleInputChange={handleInputChange}
+          handleSendMessage={handleSendMessage}
+          showEmojiPicker={showEmojiPicker}
+          setShowEmojiPicker={setShowEmojiPicker}
+          onEmojiClick={onEmojiClick}
+          isConnected={isConnected}
+          activeChat={activeChat}
+        />
+      </div>
     </div>
   );
 }
