@@ -282,3 +282,33 @@ Rooms allow the server to manage and target specific groups of clients.
 - **`io.to('roomName').emit(...)` (Server-side):**
   - Sends an event to _all clients in `roomName`_, **including** the sender (if they are in the room).
   - _Example:_ Sending an updated user list for the 'General' room to everyone in that room, including the user whose joining/leaving triggered the update.
+
+## Socket.IO Admin Dashboard
+
+You can monitor the WebSocket server activity using the Socket.IO Admin UI.
+
+1.  Ensure the server is running.
+2.  Open your web browser and navigate to [https://admin.socket.io/](https://admin.socket.io/).
+3.  Enter the server address: `http://localhost:3001` (or your server's address if different).
+4.  Since authentication is disabled (`auth: false` in `server.js`), you don't need a username or password.
+
+From the dashboard, you can view connected clients (sockets), inspect emitted events, view server statistics, and much more.
+
+### STOMP WebSocket Client (`/stomp` page)
+
+In addition to the primary Socket.IO implementation, this project includes a separate chat client example using the STOMP (Simple Text Oriented Messaging Protocol) protocol over WebSockets. This approach is common in enterprise environments, often used with message brokers like RabbitMQ or ActiveMQ, and frameworks like Spring Boot.
+
+- **Technology:** Uses `@stomp/stompjs` and `sockjs-client` on the frontend. `SockJS` provides a WebSocket-like object with fallbacks for older browsers, while `stompjs` handles the STOMP protocol specifics on top of the connection. This contrasts with the Socket.IO client (`socket.io-client`), which uses its own protocol and features like automatic reconnection and multiplexing.
+- **Functionality & Key Differences:**
+  - **Connection:** Connects to a specific URL (`http://localhost:8080/ws` by default) expected to be a STOMP endpoint, usually provided by a message broker or a backend framework integration (like Spring Boot with WebSocket support). Socket.IO connects directly to the `server.js` endpoint (`http://localhost:3001`).
+  - **Communication Model:** STOMP is message-oriented and typically relies on a central message broker. Clients `SUBSCRIBE` to named destinations (topics or queues, e.g., `/topic/public`) to receive messages and `SEND` messages to application-specific destinations (e.g., `/app/chat.sendMessage`). The broker routes messages based on these destinations. Socket.IO uses a more direct event-based model where clients emit named events (`sendMessage`, `join`) to the server, and the server broadcasts or emits events back to clients or specific rooms.
+  - **Broker vs. Direct Server:** The STOMP client assumes an intermediary broker managing subscriptions and message routing. The Socket.IO client communicates directly with the custom logic in the Node.js `server.js` file.
+  - **Message Structure:** STOMP messages often contain headers and a body (typically JSON in this example). The `stompjs` library parses these. Socket.IO messages are typically simple data payloads (like JavaScript objects) associated with an event name.
+  - **Operations:** Instead of Socket.IO's `emit` and `on`, STOMP uses commands like `CONNECT`, `SUBSCRIBE`, `SEND`, `DISCONNECT`. The `@stomp/stompjs` client provides methods like `client.subscribe()`, `client.publish()`, and `client.activate()`.
+  - **Example Flow:**
+    1. `client.activate()`: Connects to the broker via SockJS/WebSocket.
+    2. `client.subscribe('/topic/public', callback)`: Tells the broker to send messages from the `/topic/public` destination to the client's `callback` function.
+    3. `client.publish({ destination: '/app/chat.addUser', body: ... })`: Sends a message to the `/app/chat.addUser` destination for the backend application to process (e.g., register the user).
+    4. `client.publish({ destination: '/app/chat.sendMessage', body: ... })`: Sends a chat message for the backend to process and likely broadcast to `/topic/public`.
+- **Usage:** Navigate to `/stomp` in the application. **Requires a compatible backend STOMP broker** (like a Spring Boot application with WebSocket and STOMP dependencies configured) running and accessible at the specified address (`http://localhost:8080/ws`).
+- **Note:** This STOMP client is **functionally separate** from the main Socket.IO chat. It demonstrates a different WebSocket communication pattern and **will not work** with the included Node.js/Socket.IO backend (`server/server.js`). It needs its own dedicated STOMP-compatible backend.
